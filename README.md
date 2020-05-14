@@ -1,5 +1,3 @@
-# Tech_Blog
-
 ## px4代码解读
 
 - [PX4中的控制分配](https://github.com/potato77/Tech_Blog/blob/master/px4%E4%BB%A3%E7%A0%81/%5B%E4%BB%A3%E7%A0%81%E8%A7%A3%E8%AF%BB%5DPX4%E4%B8%AD%E7%9A%84%E6%8E%A7%E5%88%B6%E5%88%86%E9%85%8D.md)

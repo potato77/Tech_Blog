@@ -224,6 +224,10 @@ C语言的库均为.h头文件，构成为一个与XML同名的文件夹和几�
 
    - 签名帧共48bit，通过SHA-256算法得到，参与计算的有密钥、帧头、载荷帧、CRC、linkID及时间戳，相关API函数在mavlink_sha256.h中
 
+   - sha256原理阐述
+
+   - 加密算法调研
+
      >SHA-256算法单向Hash函数是密码学和信息安全领域中的一个非常重要的基本算法，它是把任意长的消息转化为较短的、固定长度的消息摘要的算法。（散列算法）
      >
      >SHA安全加密标准，是至今国际上使用最为广泛的较为安全的压缩算法之一，由美国NIST和NSA两个组织共同开发的，此算法于1993年5月11日被美国NIST和NSA设定为加密标准。为了提高Hash函数的安全性能，陆续发布了改进的Hash密码算法SHA-1、SHA-224、SHA-256、SHA-384及SHA-512等。但随着2004年中国密码专家王小云教授研究小组宣布对MD5、SHA-1等加密算法的破解，随着密码学研究的不断深入和计算机技术的快速发展，美国政府计划从2010年起不再使用SHA-1，全面推广使用SHA-256、SHA-384和SHA-512等加密算法。
@@ -309,29 +313,75 @@ PX4源码中只使用mavlink提供的部分API函数，以发送为例，只使�
 
 ### 签名机制
 
+MAVLink 2和MAVLink 1最大的区别就在于增加了13bytes的签名帧，签名帧共由link id、timestamp和signature组成。
+
 ![MAVLink 2 Signed](https://mavlink.io/assets/packets/packet_mavlink_v2_signing.png)
 
-- **linkID**(8 bits)：ID of link on which packet is sent. Normally this is the same as the *channel*.
-- **timestamp**(48 bits): Timestamp in 10 microsecond units since 1st January 2015 GMT time. This *must* monotonically increase for every message on a particular [link](https://mavlink.io/en/guide/message_signing.html#link_ids). Note that means the timestamp may get ahead of the actual time if the packet rate averages more than 100,000 packets per second.
-- **signature**(48 bits): A 48 bit signature for the packet, based on the complete packet, timestamp, and secret key.
-
-**接收条件**
-
-签名的消息必须满足以下条件才可以被接收
-
-- 时间戳必须大于上一个包
-- 必须和计算得到的48位签名对应上
-- 若时间戳晚于本地系统1分钟，则不能被接收
+- **linkID**(8 bits)：link编号，一般等同于channel的编号。
+- **timestamp**(48 bits): 时间戳，单位：毫秒。
+- **signature**(48 bits): 由签名位前所有的数据通过哈希单向散列算法（SHA-256）计算得到。
 
 **密钥管理**
 
-密钥是一组32bytes的二进制数据，仅由通讯双方掌握。可以通过SETUP_SIGNING消息进行密钥传递。
+密钥是一组32bytes的二进制数据，仅由通讯双方掌握，用于签名位的计算。可以通过SETUP_SIGNING消息进行密钥传递。
 
 为了避免密钥泄露，在log管理中，应避免记录SETUP_SIGNING消息。
 
+**签名帧校验规则及接收条件**
 
+签名帧必须同时满足以下条件才可以被接收：
 
-官方补充资料（需要翻墙）：https://docs.google.com/document/d/1ETle6qQRcaNWAmpG2wz0oOpFKSF_bcTmYMQvtTGI8ns/edit?usp=sharing
+- 时间戳必须大于上一个包
+- 必须和计算得到的48位签名对应上
+- 若时间戳晚于本地系统1分钟，则不能被接收（超时）
+
+关于签名帧的官方补充资料（下载需要翻墙）：https://docs.google.com/document/d/1ETle6qQRcaNWAmpG2wz0oOpFKSF_bcTmYMQvtTGI8ns/edit?usp=sharing
+
+**签名流程：**
+
+- 首选需要启动签名机制，默认情况下签名机制是不启动。即在`mavlink_finalize_message_chan()`函数中增加如下代码启动签名机制
+
+  ``` c
+  //在编码中，启动签名机制
+  //声明一个签名帧结构体
+  mavlink_signing_t signing;
+  memset(&signing, 0, sizeof(signing));
+  //读取指定秘钥
+  memcpy(signing.secret_key, secret_key_test, 32);
+  //link id赋值
+  signing.link_id = (uint8_t)chan;
+  //时间戳赋值，注意单位是ms
+  uint64_t timestamp_now = get_time_msec();
+  signing.timestamp = timestamp_now; 
+  //标志位设定
+  signing.flags = MAVLINK_SIGNING_FLAG_SIGN_OUTGOING;
+  //这个标志位暂时不会用，可以不设置
+  //signing.accept_unsigned_callback = accept_unsigned_callback;
+  //将签名帧结构体复制到状态结构体中
+  status->signing = &signing;
+  ```
+
+- `mavlink_sign_packet()`函数通过传入的签名帧结构体对签名帧进行赋值操作，主要是调用`mavlink_sha256.h`文件中的API函数，并通过SHA-256散列算法进行加密处理。
+
+  ``` c
+  //sha256算法加密的过程
+  //初始化，设定8个哈希初值
+  mavlink_sha256_init(&ctx);
+  //加入密钥
+  mavlink_sha256_update(&ctx, signing->secret_key, sizeof(signing->secret_key));
+  //加入帧头，payload之前的部分
+  mavlink_sha256_update(&ctx, header, header_len);
+  //加入payload帧
+  mavlink_sha256_update(&ctx, packet, packet_len);
+  //加入CRC？
+  mavlink_sha256_update(&ctx, crc, 2);
+  //加入link_id及时间戳
+  mavlink_sha256_update(&ctx, signature, 7);
+  //生成最终的48位密码，6个byte，并存入了签名帧中
+  mavlink_sha256_final_48(&ctx, &signature[7]);
+  ```
+
+- 签名帧共48bit，为SHA-256散列算法的前48位。参与SHA-256算法计算的有密钥、帧头、载荷帧、CRC、linkID及时间戳，相关API函数在mavlink_sha256.h中
 
 
 
