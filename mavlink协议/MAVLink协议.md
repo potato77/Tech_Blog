@@ -2,13 +2,15 @@
 
 ## 目录
 
-- 前言
-- 安装与入门
-- PX4中的MAVLink协议使用
-- MAVLink收发流程
-- 针对v2.0的开发demo
-
-
+- **前言**
+- **MAVLink 2协议介绍**
+  - **MAVLink 2协议内容**
+  - **MAVLink 2签名机制**
+- **安装与入门**
+  - **安装MAVLink及生成MAVLink库**
+  - **使用MAVLink库**
+  - **MAVLink消息收发的源码解读**
+- **Demo源码**
 
 ## 前言
 
@@ -34,6 +36,102 @@ MAVLink由Lorenz Meier在2009年早期发布，目前由众多开发者共同维
   - qgroundcontrol、mavros、MAVSDK的仓库都在这里，当然还有mavlink库本身，还有一些示例代码
 
 **注意**：一切以官方文档和代码为准，由于代码更迭较快，本文有一定时效性！
+
+
+
+## MAVLink 2协议介绍
+
+### MAVLink 2协议内容
+
+具体内容如下图及表格：
+
+![MAVLink v2 packet](https://mavlink.io/assets/packets/packet_mavlink_v2.jpg)
+
+| Byte Index       | C version                  | Content                              | Value        | Explanation                                                  |
+| ---------------- | :------------------------- | ------------------------------------ | ------------ | ------------------------------------------------------------ |
+| 0                | `uint8_t magic`            |                                      | 0xFD         | 起始帧头                                                     |
+| 1                | `uint8_t len`              | Payload length                       | 0 - 255      | `payload` 长度                                               |
+| 2                | `uint8_t incompat_flags`   | 签名标志位                           |              | 是否签名，1代表本消息已签名                                  |
+| 3                | `uint8_t compat_flags`     | 兼容性标志位                         |              | 无实际意义                                                   |
+| 4                | `uint8_t seq`              | 序列号                               | 0 - 255      | 用于检测通信的丢失率                                         |
+| 5                | `uint8_t sysid`            | System ID (发送方)                   | 1 - 255      | 发送方的System ID                                            |
+| 6                | `uint8_t compid`           | Component ID (发送方)                | 1 - 255      | 发送方的 component ID，例如 飞控、相机等，可参考 [MAV_COMPONENT](https://mavlink.io/en/messages/common.html#MAV_COMPONENT) |
+| 7 to 9           | `uint32_t msgid:24`        | Message ID (low, middle, high bytes) | 0 - 16777215 | 消息ID，即payload ID                                         |
+| 10 to (n+10)     | `uint8_t payload[max 255]` | 数据帧                               |              | 数据                                                         |
+| (n+11) to (n+12) | `uint16_t checksum`        | 校验帧 (low byte, high byte)         |              | 校验位 (不包括 `magic`帧)，包括一个额外校验帧[CRC_EXTRA](https://mavlink.io/en/guide/serialization.html#crc_extra) |
+| (n+12) to (n+26) | `uint8_t signature[13]`    | 签名帧                               |              | 确保消息安全                                                 |
+
+### MAVLink 2签名机制
+
+MAVLink 2和MAVLink 1最大的区别就在于增加了13bytes的签名帧，签名帧共由link id、timestamp和signature组成。
+
+![MAVLink 2 Signed](https://mavlink.io/assets/packets/packet_mavlink_v2_signing.png)
+
+- **linkID**(8 bits)：link编号，一般等同于channel的编号。
+- **timestamp**(48 bits): 时间戳，单位：毫秒。
+- **signature**(48 bits): 由签名位前所有的数据通过哈希单向散列算法（SHA-256）计算得到。
+
+**密钥管理**
+
+密钥是一组32bytes的二进制数据，仅由通讯双方掌握，用于签名位的计算。可以通过SETUP_SIGNING消息进行密钥传递。
+
+为了避免密钥泄露，在log管理中，应避免记录SETUP_SIGNING消息。
+
+**签名帧校验规则及接收条件**
+
+签名帧必须同时满足以下条件才可以被接收：
+
+- 时间戳必须大于上一个包
+- 必须和计算得到的48位签名对应上
+- 若时间戳晚于本地系统1分钟，则不能被接收（超时）
+
+关于签名帧的官方补充资料（下载需要翻墙）：https://docs.google.com/document/d/1ETle6qQRcaNWAmpG2wz0oOpFKSF_bcTmYMQvtTGI8ns/edit?usp=sharing
+
+**签名流程：**
+
+- 首选需要启动签名机制，默认情况下签名机制是不启动。即在`mavlink_finalize_message_chan()`函数中增加如下代码启动签名机制
+
+  ``` c
+  //在编码中，启动签名机制
+  //声明一个签名帧结构体
+  mavlink_signing_t signing;
+  memset(&signing, 0, sizeof(signing));
+  //读取指定秘钥
+  memcpy(signing.secret_key, secret_key_test, 32);
+  //link id赋值
+  signing.link_id = (uint8_t)chan;
+  //时间戳赋值，注意单位是ms
+  uint64_t timestamp_now = get_time_msec();
+  signing.timestamp = timestamp_now; 
+  //标志位设定
+  signing.flags = MAVLINK_SIGNING_FLAG_SIGN_OUTGOING;
+  //这个标志位暂时不会用，可以不设置
+  //signing.accept_unsigned_callback = accept_unsigned_callback;
+  //将签名帧结构体复制到状态结构体中
+  status->signing = &signing;
+  ```
+
+- `mavlink_sign_packet()`函数通过传入的签名帧结构体对签名帧进行赋值操作，主要是调用`mavlink_sha256.h`文件中的API函数，并通过SHA-256散列算法进行加密处理。
+
+  ``` c
+  //sha256算法加密的过程
+  //初始化，设定8个哈希初值
+  mavlink_sha256_init(&ctx);
+  //加入密钥
+  mavlink_sha256_update(&ctx, signing->secret_key, sizeof(signing->secret_key));
+  //加入帧头，payload之前的部分
+  mavlink_sha256_update(&ctx, header, header_len);
+  //加入payload帧
+  mavlink_sha256_update(&ctx, packet, packet_len);
+  //加入CRC？
+  mavlink_sha256_update(&ctx, crc, 2);
+  //加入link_id及时间戳
+  mavlink_sha256_update(&ctx, signature, 7);
+  //生成最终的48位密码，6个byte，并存入了签名帧中
+  mavlink_sha256_final_48(&ctx, &signature[7]);
+  ```
+
+- 签名帧共48bit，为SHA-256散列算法的前48位。参与SHA-256算法计算的有密钥、帧头、载荷帧、CRC、linkID及时间戳，相关API函数在mavlink_sha256.h中
 
 
 
@@ -176,65 +274,7 @@ C语言的库均为.h头文件，构成为一个与XML同名的文件夹和几�
    - `mavlink_finalize_message() `  ，定义在`mavlink_helpers.h`
    - `mavlink_finalize_message_chan()`，定义在`mavlink_helpers.h`，设定了`MAVLINK_COMM_0`
    - `mavlink_finalize_message_buffer() `，定义在`mavlink_helpers.h`，根据`MAVLINK_COMM_0`设定了`mavlink_status_t`
-   - `mavlink_finalize_message_buffer()` 是最终生成`mavlink_message_t`结构体的函数，此函数对传递的消息进行逐位赋值。若启用了签名机制（默认是不启用的，即使是MAVLink 2协议），则调用`mavlink_sign_packet()`函数进行签名帧的赋值。
-
-   **签名流程：**
-
-   - 首选需要启动签名机制，默认情况下签名机制是不启动。即在`mavlink_finalize_message_chan()`函数中增加如下代码启动签名机制
-
-     ``` c
-     //在编码中，启动签名机制
-     //声明一个签名帧结构体
-     mavlink_signing_t signing;
-     memset(&signing, 0, sizeof(signing));
-     //读取指定秘钥
-     memcpy(signing.secret_key, secret_key_test, 32);
-     //link id赋值
-     signing.link_id = (uint8_t)chan;
-     //时间戳赋值，注意单位是ms
-     uint64_t timestamp_now = get_time_msec();
-     signing.timestamp = timestamp_now; 
-     //标志位设定
-     signing.flags = MAVLINK_SIGNING_FLAG_SIGN_OUTGOING;
-     //这个标志位暂时不会用，可以不设置
-     //signing.accept_unsigned_callback = accept_unsigned_callback;
-     //将签名帧结构体复制到状态结构体中
-     status->signing = &signing;
-     ```
-
-   - `mavlink_sign_packet()`函数通过传入的签名帧结构体对签名帧进行赋值操作，主要是调用`mavlink_sha256.h`文件中的API函数，并通过SHA-256散列算法进行加密处理。
-
-     ``` c
-     //sha256算法加密的过程
-     //初始化，设定8个哈希初值
-     mavlink_sha256_init(&ctx);
-     //加入密钥
-     mavlink_sha256_update(&ctx, signing->secret_key, sizeof(signing->secret_key));
-     //加入帧头，payload之前的部分
-     mavlink_sha256_update(&ctx, header, header_len);
-     //加入payload帧
-     mavlink_sha256_update(&ctx, packet, packet_len);
-     //加入CRC？
-     mavlink_sha256_update(&ctx, crc, 2);
-     //加入link_id及时间戳
-     mavlink_sha256_update(&ctx, signature, 7);
-     //生成最终的48位密码，6个byte，并存入了签名帧中
-     mavlink_sha256_final_48(&ctx, &signature[7]);
-     ```
-
-   - 签名帧共48bit，通过SHA-256算法得到，参与计算的有密钥、帧头、载荷帧、CRC、linkID及时间戳，相关API函数在mavlink_sha256.h中
-
-   - sha256原理阐述
-
-   - 加密算法调研
-
-     >SHA-256算法单向Hash函数是密码学和信息安全领域中的一个非常重要的基本算法，它是把任意长的消息转化为较短的、固定长度的消息摘要的算法。（散列算法）
-     >
-     >SHA安全加密标准，是至今国际上使用最为广泛的较为安全的压缩算法之一，由美国NIST和NSA两个组织共同开发的，此算法于1993年5月11日被美国NIST和NSA设定为加密标准。为了提高Hash函数的安全性能，陆续发布了改进的Hash密码算法SHA-1、SHA-224、SHA-256、SHA-384及SHA-512等。但随着2004年中国密码专家王小云教授研究小组宣布对MD5、SHA-1等加密算法的破解，随着密码学研究的不断深入和计算机技术的快速发展，美国政府计划从2010年起不再使用SHA-1，全面推广使用SHA-256、SHA-384和SHA-512等加密算法。
-     >
-     >SHA是散列算法，不是加密算法，不存在解密的问题。
-     >
-     >SHA256基本上是不可破解的，即找不到（或概率极小）“碰撞”结果
+   - `mavlink_finalize_message_buffer()` 是最终生成`mavlink_message_t`结构体的函数，此函数对传递的消息进行逐位赋值。若启用了签名机制（默认是不启用的，即使是MAVLink 2协议），则调用`mavlink_sign_packet()`函数进行签名帧的赋值。（签名流程见前文）
 
 3. **消息发送**。通过如下API函数将`mavlink_message_t`结构体转化为字符数组，该函数将返回`buf`数组的长度。随后便可以通过端口发送该数据。
 
@@ -275,12 +315,6 @@ C语言的库均为.h头文件，构成为一个与XML同名的文件夹和几�
 
 4. **接收流程结束**。
 
-
-
-此处大部分流程可参照**c_uart_interface_example**仓库的写法，仓库链接：https://github.com/mavlink/c_uart_interface_example。**c_uart_interface_example**中共写了五个类：mavlink_control类、autopilot_interface类、generic_port类、serial_port类、udp_port类，mavlink_control为最顶层模块，autopilot_interface次顶层，剩下的均为通信底层，共提供了UDP和串口两种方式。
-
-**c_uart_interface_example**程序较为简单，但只支持MAVLink 1协议。后续会提供我开发的支持MAVLink 2协议的demo供参考使用。
-
 **备注 2020.5.12**
 
 PX4源码中只使用mavlink提供的部分API函数，以发送为例，只使用了`xxxx_encode()`函数，但是`mavlink_msg_to_send_buffer`并未使用。
@@ -289,99 +323,15 @@ PX4源码中只使用mavlink提供的部分API函数，以发送为例，只使�
 
 
 
-## MAVLink协议介绍
+## Demo源码
 
-### MAVLink 2协议内容
+大部分流程可参照**c_uart_interface_example**仓库的写法，仓库链接：https://github.com/mavlink/c_uart_interface_example。**c_uart_interface_example**中共写了五个类：mavlink_control类、autopilot_interface类、generic_port类、serial_port类、udp_port类，mavlink_control为最顶层模块，autopilot_interface次顶层，剩下的均为通信底层，共提供了UDP和串口两种方式。
 
-具体内容如下图及表格：
+**c_uart_interface_example**程序较为简单，但只支持MAVLink 1协议。后续会提供我开发的支持MAVLink 2协议的demo供参考使用。
 
-![MAVLink v2 packet](https://mavlink.io/assets/packets/packet_mavlink_v2.jpg)
 
-| Byte Index       | C version                  | Content                                                      | Value             | Explanation                                                  |
-| ---------------- | :------------------------- | ------------------------------------------------------------ | ----------------- | ------------------------------------------------------------ |
-| 0                | `uint8_t magic`            | Packet start marker                                          | 0xFD              | Protocol-specific start-of-text (STX) marker used to indicate the beginning of a new packet. Any system that does not understand protocol version will skip the packet. |
-| 1                | `uint8_t len`              | Payload length                                               | 0 - 255           | Indicates length of the following `payload` section. This may be affected by [payload truncation](https://mavlink.io/en/guide/serialization.html#payload_truncation). |
-| 2                | `uint8_t incompat_flags`   | [Incompatibility Flags](https://mavlink.io/en/guide/serialization.html#incompat_flags) | 1代表本消息已签名 | Flags that must be understood for MAVLink compatibility (implementation discards packet if it does not understand flag). |
-| 3                | `uint8_t compat_flags`     | [Compatibility Flags](https://mavlink.io/en/guide/serialization.html#compat_flags) |                   | Flags that can be ignored if not understood (implementation can still handle packet even if it does not understand flag). |
-| 4                | `uint8_t seq`              | Packet sequence number                                       | 0 - 255           | Used to detect packet loss. Components increment value for each message sent. |
-| 5                | `uint8_t sysid`            | System ID (sender)                                           | 1 - 255           | ID of *system* (vehicle) sending the message. Used to differentiate systems on network. Note that the broadcast address 0 may not be used in this field as it is an invalid *source* address. |
-| 6                | `uint8_t compid`           | Component ID (sender)                                        | 1 - 255           | ID of *component* sending the message. Used to differentiate *components* in a *system* (e.g. autopilot and a camera). Use appropriate values in [MAV_COMPONENT](https://mavlink.io/en/messages/common.html#MAV_COMPONENT). Note that the broadcast address `MAV_COMP_ID_ALL` may not be used in this field as it is an invalid *source* address. |
-| 7 to 9           | `uint32_t msgid:24`        | Message ID (low, middle, high bytes)                         | 0 - 16777215      | ID of *message type* in payload. Used to decode data back into message object. |
-| 10 to (n+10)     | `uint8_t payload[max 255]` | [Payload](https://mavlink.io/en/guide/serialization.html#payload) |                   | Message data. Depends on message type (i.e. Message ID) and contents. |
-| (n+11) to (n+12) | `uint16_t checksum`        | [Checksum](https://mavlink.io/en/guide/serialization.html#checksum) (low byte, high byte) |                   | X.25 CRC for message (excluding `magic` byte). Includes [CRC_EXTRA](https://mavlink.io/en/guide/serialization.html#crc_extra) byte. |
-| (n+12) to (n+26) | `uint8_t signature[13]`    | [Signature](https://mavlink.io/en/guide/message_signing.html) |                   | (Optional) Signature to ensure the link is tamper-proof.     |
 
-### 签名机制
 
-MAVLink 2和MAVLink 1最大的区别就在于增加了13bytes的签名帧，签名帧共由link id、timestamp和signature组成。
-
-![MAVLink 2 Signed](https://mavlink.io/assets/packets/packet_mavlink_v2_signing.png)
-
-- **linkID**(8 bits)：link编号，一般等同于channel的编号。
-- **timestamp**(48 bits): 时间戳，单位：毫秒。
-- **signature**(48 bits): 由签名位前所有的数据通过哈希单向散列算法（SHA-256）计算得到。
-
-**密钥管理**
-
-密钥是一组32bytes的二进制数据，仅由通讯双方掌握，用于签名位的计算。可以通过SETUP_SIGNING消息进行密钥传递。
-
-为了避免密钥泄露，在log管理中，应避免记录SETUP_SIGNING消息。
-
-**签名帧校验规则及接收条件**
-
-签名帧必须同时满足以下条件才可以被接收：
-
-- 时间戳必须大于上一个包
-- 必须和计算得到的48位签名对应上
-- 若时间戳晚于本地系统1分钟，则不能被接收（超时）
-
-关于签名帧的官方补充资料（下载需要翻墙）：https://docs.google.com/document/d/1ETle6qQRcaNWAmpG2wz0oOpFKSF_bcTmYMQvtTGI8ns/edit?usp=sharing
-
-**签名流程：**
-
-- 首选需要启动签名机制，默认情况下签名机制是不启动。即在`mavlink_finalize_message_chan()`函数中增加如下代码启动签名机制
-
-  ``` c
-  //在编码中，启动签名机制
-  //声明一个签名帧结构体
-  mavlink_signing_t signing;
-  memset(&signing, 0, sizeof(signing));
-  //读取指定秘钥
-  memcpy(signing.secret_key, secret_key_test, 32);
-  //link id赋值
-  signing.link_id = (uint8_t)chan;
-  //时间戳赋值，注意单位是ms
-  uint64_t timestamp_now = get_time_msec();
-  signing.timestamp = timestamp_now; 
-  //标志位设定
-  signing.flags = MAVLINK_SIGNING_FLAG_SIGN_OUTGOING;
-  //这个标志位暂时不会用，可以不设置
-  //signing.accept_unsigned_callback = accept_unsigned_callback;
-  //将签名帧结构体复制到状态结构体中
-  status->signing = &signing;
-  ```
-
-- `mavlink_sign_packet()`函数通过传入的签名帧结构体对签名帧进行赋值操作，主要是调用`mavlink_sha256.h`文件中的API函数，并通过SHA-256散列算法进行加密处理。
-
-  ``` c
-  //sha256算法加密的过程
-  //初始化，设定8个哈希初值
-  mavlink_sha256_init(&ctx);
-  //加入密钥
-  mavlink_sha256_update(&ctx, signing->secret_key, sizeof(signing->secret_key));
-  //加入帧头，payload之前的部分
-  mavlink_sha256_update(&ctx, header, header_len);
-  //加入payload帧
-  mavlink_sha256_update(&ctx, packet, packet_len);
-  //加入CRC？
-  mavlink_sha256_update(&ctx, crc, 2);
-  //加入link_id及时间戳
-  mavlink_sha256_update(&ctx, signature, 7);
-  //生成最终的48位密码，6个byte，并存入了签名帧中
-  mavlink_sha256_final_48(&ctx, &signature[7]);
-  ```
-
-- 签名帧共48bit，为SHA-256散列算法的前48位。参与SHA-256算法计算的有密钥、帧头、载荷帧、CRC、linkID及时间戳，相关API函数在mavlink_sha256.h中
 
 
 
