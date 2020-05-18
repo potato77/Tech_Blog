@@ -14,7 +14,7 @@
 
 ## 前言
 
-MAVLink全称是(**Micro Air Vehicle Message Marshalling Library**)，是一种轻量级的消息传输协议, 用于无人机之间（或机载组件之间）的通信。
+**MAVLink**全称是(**Micro Air Vehicle Message Marshalling Library**)，是一种轻量级的消息传输协议, 用于无人机之间（或机载组件之间）的通信。
 
 消息通过XML文件进行定义。每个XML文件对应一个特定的MAVLink协议消息系统，被称为“dialect”（其实就是自定义的消息集，PX4中使用就是MAVLink官方提供的common消息集）。
 
@@ -26,14 +26,16 @@ MAVLink工具链可以通过指定的XML文件生成支持多种编程语言（C
 
 MAVLink由Lorenz Meier在2009年早期发布，目前由众多开发者共同维护。在此，感谢Lorenz大神及其他代码开发者，并附上和Lorenz的合照一张。
 
+
+
 **相关链接**：
 
 - MAVLink开发手册
   - 链接：https://mavlink.io/
-  - 有能力尽量阅读英文原文，因为中文翻译存在滞后或者偏差的情况
+  - 尽量阅读英文原文，因为中文翻译存在不准确和滞后和的情况
 - MAVLink Github主页
   - 链接：https://github.com/mavlink
-  - qgroundcontrol、mavros、MAVSDK的仓库都在这里，当然还有mavlink库本身，还有一些示例代码
+  - QGroundControl、mavros、MAVSDK的仓库都在这里，当然还有mavlink库本身，还有一些示例代码
 
 **注意**：一切以官方文档和代码为准，由于代码更迭较快，本文有一定时效性！
 
@@ -47,19 +49,19 @@ MAVLink由Lorenz Meier在2009年早期发布，目前由众多开发者共同维
 
 ![MAVLink v2 packet](https://mavlink.io/assets/packets/packet_mavlink_v2.jpg)
 
-| Byte Index       | C version                  | Content                              | Value        | Explanation                                                  |
-| ---------------- | :------------------------- | ------------------------------------ | ------------ | ------------------------------------------------------------ |
-| 0                | `uint8_t magic`            |                                      | 0xFD         | 起始帧头                                                     |
-| 1                | `uint8_t len`              | Payload length                       | 0 - 255      | `payload` 长度                                               |
-| 2                | `uint8_t incompat_flags`   | 签名标志位                           |              | 是否签名，1代表本消息已签名                                  |
-| 3                | `uint8_t compat_flags`     | 兼容性标志位                         |              | 无实际意义                                                   |
-| 4                | `uint8_t seq`              | 序列号                               | 0 - 255      | 用于检测通信的丢失率                                         |
-| 5                | `uint8_t sysid`            | System ID (发送方)                   | 1 - 255      | 发送方的System ID                                            |
-| 6                | `uint8_t compid`           | Component ID (发送方)                | 1 - 255      | 发送方的 component ID，例如 飞控、相机等，可参考 [MAV_COMPONENT](https://mavlink.io/en/messages/common.html#MAV_COMPONENT) |
-| 7 to 9           | `uint32_t msgid:24`        | Message ID (low, middle, high bytes) | 0 - 16777215 | 消息ID，即payload ID                                         |
-| 10 to (n+10)     | `uint8_t payload[max 255]` | 数据帧                               |              | 数据                                                         |
-| (n+11) to (n+12) | `uint16_t checksum`        | 校验帧 (low byte, high byte)         |              | 校验位 (不包括 `magic`帧)，包括一个额外校验帧[CRC_EXTRA](https://mavlink.io/en/guide/serialization.html#crc_extra) |
-| (n+12) to (n+26) | `uint8_t signature[13]`    | 签名帧                               |              | 确保消息安全                                                 |
+| Byte Index     | C version                  | Content                              | Value        | Explanation                                                  |
+| -------------- | :------------------------- | ------------------------------------ | ------------ | ------------------------------------------------------------ |
+| 0              | `uint8_t magic`            |                                      | 0xFD         | 起始帧头                                                     |
+| 1              | `uint8_t len`              | Payload length                       | 0 - 255      | `payload` 长度，设为n                                        |
+| 2              | `uint8_t incompat_flags`   | 签名标志位                           |              | 是否签名，1代表本消息已签名                                  |
+| 3              | `uint8_t compat_flags`     | 兼容性标志位                         |              | 无实际意义                                                   |
+| 4              | `uint8_t seq`              | 序列号                               | 0 - 255      | 用于检测通信的丢失率                                         |
+| 5              | `uint8_t sysid`            | System ID (发送方)                   | 1 - 255      | 发送方的System ID                                            |
+| 6              | `uint8_t compid`           | Component ID (发送方)                | 1 - 255      | 发送方的 component ID，例如 飞控、相机等，可参考 [MAV_COMPONENT](https://mavlink.io/en/messages/common.html#MAV_COMPONENT) |
+| 7 - 9          | `uint32_t msgid:24`        | Message ID (low, middle, high bytes) | 0 - 16777215 | 消息ID，即payload ID                                         |
+| 10 - (n+10)    | `uint8_t payload[max 255]` | 数据帧                               |              | 数据                                                         |
+| (n+11) -(n+12) | `uint16_t checksum`        | 校验帧 (low byte, high byte)         |              | 校验位 (不包括 `magic`帧)，包括一个额外校验帧[CRC_EXTRA](https://mavlink.io/en/guide/serialization.html#crc_extra) |
+| (n+12) -(n+26) | `uint8_t signature[13]`    | 签名帧                               |              | 确保消息安全                                                 |
 
 ### MAVLink 2签名机制
 
@@ -337,20 +339,42 @@ PX4源码中只使用mavlink提供的部分API函数，以发送为例，只使�
 
 ###　Routing
 
-Systems/components should process a message locally if any of these conditions hold:
+一个MAVLink网络由多个系统（无人机、地面站等）组成，这些系统可能由一个或者多个组件（数传、机载电脑、相机等）组成。每个系统和组件都有一个独有的`sysid`和`comid`用于却分他们之间的关系，储存在帧头中，表示发送该消息的系统ID和组件ID。
 
-- It is a broadcast message (`target_system` field omitted or zero).
-- The `target_system` matches its system id and `target_component` is broadcast (`target_component` omitted or zero).
-- The `target_system` matches its system id and has the component's `target_component`
-- The `target_system` matches its system id and the component is unknown (i.e. this component has not seen any messages on any link that have the message's `target_system`/`target_component`).
+- `sysid`取值范围为1-255
+  - 一般默认`sysid`为1
+  - 一般建议地面站从255开始往下取值
+- `comid`取值范围为1-255？
 
-Systems should forward messages to another link if any of these conditions hold:
+`target_system`和`target_component`被储存在有效载荷中，表示接收该消息的系统的和组件，0代表广播。
 
-- It is a broadcast message (`target_system` field omitted or zero).
-- The `target_system` does not match the system id *and* the system knows the link of the target system (i.e. it has previously seen a message from `target_system` on the link).
-- The `target_system` matches its system id and has a `target_component` field, and the system has seen a message from the `target_system`/`target_component` combination on the link.
+- `target_system`：执行命令的系统
+- `target_component`：执行命令的组件 (需要 `target_system`)。
+
+
+
+当如下任一情况满足时，Systems/components将处理该条消息
+
+- 如果这条消息是广播消息(`target_system` 为0)
+- `target_system`与本机系统ID（`sysid`）匹配，并且`target_component` 为广播形式 (`target_component` 为0)
+- `target_system`与本机系统ID（`sysid`）匹配，并且`target_component` 本机组件ID（`scomid`）匹配。
+
+如果以下任一条件存在, 系统应将消息转发到另一个链接:
+
+- 这是一个广播消息
+- `target_system` 与系统ID不符合，但系统知道目标系统的联系(即它先前从链接的`target_system`上看到一个消息)。
+- `target_system` 与其系统 id 匹配, 并具有 `target_component` 字段, 并且系统在链接上看到了来自 `target_system`/`target_component` 组合的消息。
 
 ### xml文件的规则和编写
+
+
+
+Fields are sorted according to their native data size:
+
+- `(u)int64_t`, `double` (8 bytes)
+- `(u)int32_t`, `float` (4)
+- `(u)int16_t` (2)
+- `(u)int8_t`, `char` (1)
 
 ## 服务
 
