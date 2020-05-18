@@ -167,68 +167,6 @@ OFFSET includes two main performer types: Swarm System Integrators and Swarm Spr
 
 The June event brought together the integrators and second set of Swarm Sprinters, including Heron; Michigan Tech Research Institute; University of North Carolina, Charlotte; and Cornell University, to integrate and test swarm autonomy tactics and technologies.
 
-翻译上述项目有关的论文、技术资料及成果。
-
-新型作战概念就是 集群作战（空+地无人系统）
-
-对其关键技术进行反推，并完成仿真演示
-
-
-
-搭建物理仿真平台（Gazebo，Airsim等），构建环境（城区，建筑内部等等），利用集群无人机/无人车系统（5-50台）通过人工指定目标，在特定区域，实现自主感知，建图，搜索，并识别到目标进行打击。
-
-比较核心的几点技术
-
-**快速部署**
-
-**自主感知**
-
-- 建图、定位
-- 搜索、识别
-
-**集群规划和控制**
-
-- 依据感知结果，实时规划路径并优化轨迹
-- 保证不碰撞且尽可能快速的机动
-
-**人工有机干预**
-
-- 便捷的操作，可以在自主任务的任何一环干预，提高任务效率
-
-**集群通信**
-
-- 加密传输，防止被干扰
-
-**引入小型固定翼参与集群**
-
-技术细节？
-
-比如采用什么编队算法（各种情况下的理论推导）、感知的方式、
-
-
-
-项目名称：**大规模智能自主蜂群无人系统的强敌作战技术研究**
-
-
-
-以强敌新型蜂群作战技术为背景，如美国国防高级研究计划局“进攻蜂群使能战术”（OFFSET）等项目，针对复杂未知作战环境，展开对大规模智能自主蜂群无人系统的强敌作战技术研究。拟重点针对以下3个要点开展研究。
-
-1. **蜂群无人系统关键技术调研**。翻译整编强敌新型大规模智能自主蜂群无人系统作战技术及作战概念，其中包括集群自主感知技术、集群智能决策技术、集群规划及控制技术、安全组网及通信技术 、异构智能无人系统作战概念、有人/无人协同作战概念等。
-2. **蜂群无人系统关键技术分析及反设计**。在调研强敌新型蜂群无人系统作战技术及作战概念的基础上，分析其理论依据、技术要点、实现细节及难点。对大规模智能自主蜂群无人系统的强敌关键作战技术进行反设计，并提出相应的技术路线及实现方案。 
-3. **蜂群无人系统关键技术的仿真实现**。选用贴近真实环境的物理仿真引擎（如Gazebo、Airsim等仿真平台），搭建多种复杂作战环境（如城市巷战、大型建筑等作战环境）及无人作战系统模型（如旋翼无人机、无人车等）。对无人系统的关键算法及技术（如集群规划及控制、安全组网及通信等）进行编程实现，并在仿真平台中完成大规模智能自主蜂群作战技术的测试及验证。
-
-
-
-项目名称：**大规模智能自主蜂群WR系统的强敌ZZ技术研究**
-
-
-
-以强敌新型蜂群ZZ技术为背景，如美国国防高级研究计划局“进攻蜂群使能战术”（OFFSET）等项目，针对复杂未知ZZ环境，展开对大规模智能自主蜂群无人系统的强敌作战技术研究。拟重点针对以下3个要点开展研究。
-
-1. **蜂群无人系统关键技术调研**。翻译整编强敌新型大规模智能自主蜂群无人系统作战技术及作战概念，其中包括集群自主感知技术、集群智能决策技术、集群规划及控制技术、安全组网及通信技术 、异构智能无人系统作战概念、有人/无人协同作战概念等。
-2. **蜂群无人系统关键技术分析及反设计**。在调研强敌新型蜂群无人系统作战技术及作战概念的基础上，分析其理论依据、技术要点、实现细节及难点。对大规模智能自主蜂群无人系统的强敌关键作战技术进行反设计，并提出相应的技术路线及实现方案。 
-3. **蜂群无人系统关键技术的仿真实现**。选用贴近真实环境的物理仿真引擎（如Gazebo、Airsim等仿真平台），搭建多种复杂作战环境（如城市巷战、大型建筑等作战环境）及无人作战系统模型（如旋翼无人机、无人车等）。对无人系统的关键算法及技术（如集群规划及控制、安全组网及通信等）进行编程实现，并在仿真平台中完成大规模智能自主蜂群作战技术的测试及验证。
-
 
 
 第四次
@@ -238,10 +176,6 @@ The fourth swarm sprint consists of two topics areas: developing synthetic techn
 For the first topic area, proposers will seek to develop and implement synthetic capabilities in simulation, representing potential future technologies, such as distributed “see-through-wall” sensors, passive swarm communications, or enhanced sensor/computing arrays, to enable and demonstrate novel swarm tactics. Proposed technologies could be near-term advances that are being prototyped in laboratories or far-term ideas that are primarily conceptual but physically grounded.
 
 The second topic area represents an ad hoc sprint for leveraging artificial Intelligence for accelerating swarm tactics design, for which sprinters will discover, learn, and harden novel swarm tactics by applying artificial intelligence frameworks via enhancements of the OFFSET virtual environments.
-
-
-
-
 
 
 
