@@ -78,13 +78,15 @@
 
  1. 在初始化的时候，读取对应的**脚本**，根据脚本内容，定义一个用于计算混控的mixer类（调用Mixer库）
 
-	    mixer_handle_text_create_mixer();
-    
-	对于旋翼无人机来说，这里会新定义一个**MultirotorMixer**的类。
+        mixer_handle_text_create_mixer();
 
-	    case  'R':
-	          m =  MultirotorMixer::from_text(_control_cb, _cb_handle, p, resid);
-	          break;
+     对于旋翼无人机来说，这里会新定义一个**MultirotorMixer**的类。
+
+     ```C
+     case  'R':
+           m =  MultirotorMixer::from_text(_control_cb, _cb_handle, p, resid);
+           break;
+     ```
 
  2. 进入主循环后，将会调用MultirotorMixer这个类进行**控制分配**的计算，执行代码如下
 
@@ -97,7 +99,7 @@
       相关文件：`~/src/lib/pwm_limit/pwm_limit.c`。其中，pwm计算代码 ：
 
 	    effective_pwm[i] = control_value * (max_pwm[i] -  min_pwm[i]) /  2  + (max_pwm[i] +  min_pwm[i]) /  2;
-	    
+	
      min_pwm和max_pwm分别对应系统参数中的PWM_MIN和PWM_MAX（可在QGC参数列表中查询得到，默认值是1000和2000）。如果某个电机计算出来的控制量为 x（x是一个在[-1, 1]区间的量），则计算出来的pwm值为 
 $$pwm = x*500 + 1500$$
 
@@ -127,51 +129,51 @@ $$pwm = x*500 + 1500$$
 	    set PWM_OUT 1234
 
  3. `quad_x`，即读取~/src/lib/mixer/geometries/quad_x.toml这个文件。
-	 
+	
 	 懒得贴图了，直接给一个PX4源码[链接](https://github.com/PX4/Firmware/blob/v1.8.2/src/lib/mixer/geometries/quad_x.toml)吧。
  4. 计算混控矩阵，由于原文件是python程序写的，部分定义与常见c语言或matlab不太一致，我整理为matlab代码如下
 
 	    axis      = [0.0, 0.0, -1.0];
         Ct        = 1.0;
         Cm        = 0.05;
-        
+     
         position1  = [0.707107, 0.707107, 0.0];
         position2  = [-0.707107, -0.707107, 0.0];
         position3  = [0.707107, -0.707107, 0.0];
         position4  = [-0.707107, 0.707107, 0.0];
-        
+     
         torque_matrix(1,:) = Ct * cross(position1, axis) - Cm * [0,0,-1];
         torque_matrix(2,:) = Ct * cross(position2, axis) - Cm * [0,0,-1];
         torque_matrix(3,:) = Ct * cross(position3, axis) - Cm * [0,0,1];
         torque_matrix(4,:) = Ct * cross(position4, axis) - Cm * [0,0,1];
-        
+     
         thrust_matrix(1,:) = Ct * axis;
         thrust_matrix(2,:) = Ct * axis;
         thrust_matrix(3,:) = Ct * axis;
         thrust_matrix(4,:) = Ct * axis;
-        
+     
         A = [torque_matrix,thrust_matrix]';
   
         B =   pinv(A);
-        
+     
         for i = 1:6
             B_norm(i) = norm(B(:,i));
             B_max(i)  = max(abs(B(:,i)));
             B_sum(i)  = sum(B(:,i));
         end
-        
+     
         B_norm(1) = max(B_norm(1), B_norm(2)) / sqrt(4 / 2.0);
         B_norm(2) = B_norm(1);
         B_norm(3) = B_max(3);
         B_norm(4) = 1;
         B_norm(5) = B_norm(4);
         B_norm(6) = - B_sum(6) / 4;
-        
+     
         B_norm_new = [B_norm(1),B_norm(2),B_norm(3),B_norm(4),B_norm(5),B_norm(6);
                       B_norm(1),B_norm(2),B_norm(3),B_norm(4),B_norm(5),B_norm(6);
                       B_norm(1),B_norm(2),B_norm(3),B_norm(4),B_norm(5),B_norm(6);
                       B_norm(1),B_norm(2),B_norm(3),B_norm(4),B_norm(5),B_norm(6);]
-        
+     
         B_px = (B ./ B_norm_new)
 
  5. 最后B_px这个矩阵就对应最初的_config_quad_x[]这个矩阵。
@@ -182,6 +184,7 @@ $$pwm = x*500 + 1500$$
 	        	{  0.707107,  0.707107, -1.000000,  1.000000 },
 	        	{ -0.707107, -0.707107, -1.000000,  1.000000 },};
 	        	
+
 其中，第一排第二项的调用方式为： _rotor[0].pitch_scale。（在MultirotorMixer::mix这个混控函数中你会看到这种调用方式）
 
 **如果是想设计异型旋翼飞机，则可以在第一步的文件中进行修改，比如修改各个电机的位置，或者增加电机数量。**
@@ -223,16 +226,16 @@ $$pwm = x*500 + 1500$$
 	    /* perform initial mix pass yielding unbounded outputs, ignore yaw */
 	    for (unsigned i =  0; i < _rotor_count; i++) 
 	    {
-		    float out = roll *  _rotors[i].roll_scale  +
-		    pitch *  _rotors[i].pitch_scale  +
-		    thrust *  _rotors[i].thrust_scale;
-
-		    /* calculate min and max output values */
-		    if (out < min_out) {  min_out = out;}
-
-		    if (out > max_out) {  max_out = out;}
-		    
-		    outputs[i] = out;
+	        float out = roll *  _rotors[i].roll_scale  +
+	        pitch *  _rotors[i].pitch_scale  +
+	        thrust *  _rotors[i].thrust_scale;
+        
+	        /* calculate min and max output values */
+	        if (out < min_out) {  min_out = out;}
+        
+	        if (out > max_out) {  max_out = out;}
+	        
+	        outputs[i] = out;
 	    }
 
 	**异常处理**，以下摘自阿木实验室的mixer教程
@@ -243,21 +246,21 @@ $$pwm = x*500 + 1500$$
 
 	    for (unsigned i =  0; i < _rotor_count; i++) 
 	    {
-			   outputs[i] = (roll *  _rotors[i].roll_scale  +
-			   pitch *  _rotors[i].pitch_scale) * roll_pitch_scale +
-			   yaw *  _rotors[i].yaw_scale  +
-			   (thrust + boost) *  _rotors[i].thrust_scale;
+	    	   outputs[i] = (roll *  _rotors[i].roll_scale  +
+	    	   pitch *  _rotors[i].pitch_scale) * roll_pitch_scale +
+	    	   yaw *  _rotors[i].yaw_scale  +
+	    	   (thrust + boost) *  _rotors[i].thrust_scale;
 	    }
 	我的理解就是防止某个电机出现饱和现象。在不饱和的情况下，这种处理是等同于直接进行roll，pitch，yaw及升力的一步分配的。
 
 	最后，再次对控制量进行一次**缩放**，由[0, 1]缩放至[-1 ,1]
-    
+     
+	
 	    outputs[i] =  math::constrain(_idle_speed + (outputs[i] * (1.0f  - _idle_speed)), _idle_speed, 1.0f);
 
-
 **总结一下**，对于普通的”x“型四旋翼，在不饱和的情况下，控制分配计算如下：
-
-$$\begin{bmatrix}
+$$
+\begin{bmatrix}
  \text{output 1}\\
  \text{output 2}\\
  \text{output 3} \\
@@ -274,8 +277,8 @@ $$\begin{bmatrix}
  \text{ pitch  }\\
 \text{  yaw  }\\
 \text{  thrust  }\\
- \end{bmatrix} $$
-
+ \end{bmatrix}
+$$
  $$\text{output[i]}=   2 *  \text{output[i]} - 1$$
 其中，roll，pitch，yaw在[-1, 1]区间，thrust在[0, 1]区间；output[i]在[-1, 1]区间；这样最后算出的pwm值在[1000, 2000]区间。
 
