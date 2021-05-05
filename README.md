@@ -17,4 +17,7 @@
 
 ## 备忘录
 
-史上最强markdown编辑器typora终于支持图床功能了：https://zhuanlan.zhihu.com/p/137310314
+PicGo + Gitee(码云)实现markdown图床：
+
+- https://zhuanlan.zhihu.com/p/102594554
+- https://www.cnblogs.com/focksor/p/12402471.html
