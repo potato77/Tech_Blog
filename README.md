@@ -14,3 +14,10 @@
 ## 其他
 
 - [无人机领域知名课题组](https://github.com/potato77/Tech_Blog/blob/master/%E5%85%B6%E4%BB%96/%E6%97%A0%E4%BA%BA%E6%9C%BA%E9%A2%86%E5%9F%9F%E7%9F%A5%E5%90%8D%E8%AF%BE%E9%A2%98%E7%BB%84.md)
+
+## 备忘录
+
+PicGo + Gitee(码云)实现markdown图床：
+
+- https://zhuanlan.zhihu.com/p/102594554
+- https://www.cnblogs.com/focksor/p/12402471.html
